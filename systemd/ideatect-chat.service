@@ -1,0 +1,17 @@
+[Unit]
+Description=Ideatect chat API
+After=network-online.target mysql.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/ideatect
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/ideatect/.venv/bin/gunicorn app:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 127.0.0.1:8000 --access-logfile - --error-logfile -
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
