@@ -1,0 +1,2 @@
+At the end of message, always end with the text 'COMPLETED' on the last line to indicate that you are waiting for input, do not output COMPLETED if there is  any processing in progress. Only once waiting for user input. 
+Each time that a message results in one of more files being modified, increment the version patch number by one. e.g. 0.1.51 -> 0.1.52, 0.1.52 -> 0.1.53
