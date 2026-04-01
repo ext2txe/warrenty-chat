@@ -15,7 +15,7 @@ from core.workflow import ConversationEngine, WorkflowContext
 from workflows.warranty_qualification import DEFAULT_CONFIG, WarrantyQualificationWorkflow
 
 
-APP_VERSION = "0.1.20"
+APP_VERSION = "0.1.21"
 DATABASE_URL = "mysql+pymysql://chatuser:StrongPasswordHere@localhost/ideatect"
 PRECONFIGURED_CALLER_NAME = "Alex Customer"
 DEFAULT_WORKFLOW = "warranty_qualification"
