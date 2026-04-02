@@ -308,7 +308,7 @@ class RegexFallbackExtractor:
 
         if state == "GET_REFERENCE_ID":
             data["reference_id"] = extract_reference_id(user_msg)
-        elif state == "GET_NAME_CONFIRMATION":
+        elif state in {"GET_NAME_CONFIRMATION", "CONFIRM_REFERENCE_ID", "CONFIRM_VEHICLE"}:
             data["name_confirmed"] = extract_name_confirmation(user_msg)
         elif state == "GET_VEHICLE":
             data.update(extract_year_make_model(user_msg))

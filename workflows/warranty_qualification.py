@@ -24,6 +24,10 @@ DEFAULT_CONFIG = {
         "max_turns_without_progress": 2,
         "allow_one_save_attempt": True,
     },
+    "voice": {
+        "min_confidence_to_commit": 0.72,
+        "min_confidence_without_confirmation": 0.9,
+    },
 }
 
 
@@ -46,6 +50,9 @@ class WarrantyQualificationWorkflow:
         "GET_REFERENCE_ID": [
             ExtractionField("reference_id", "string", "Letter or mailer reference identifier", required=True, confirmation_required=True),
         ],
+        "CONFIRM_REFERENCE_ID": [
+            ExtractionField("name_confirmed", "boolean", "Whether the caller confirmed the heard reference id", required=True),
+        ],
         "GET_NAME_CONFIRMATION": [
             ExtractionField("name_confirmed", "boolean", "Whether the caller confirmed the preconfigured name", required=True),
         ],
@@ -53,6 +60,9 @@ class WarrantyQualificationWorkflow:
             ExtractionField("vehicle_year", "integer", "Vehicle year", required=True, confirmation_required=True),
             ExtractionField("vehicle_make", "string", "Vehicle make", required=True),
             ExtractionField("vehicle_model", "string", "Vehicle model", required=True),
+        ],
+        "CONFIRM_VEHICLE": [
+            ExtractionField("name_confirmed", "boolean", "Whether the caller confirmed the heard vehicle details", required=True),
         ],
         "GET_MILEAGE": [
             ExtractionField("mileage", "integer", "Vehicle mileage", required=True, confirmation_required=True),
@@ -82,10 +92,18 @@ class WarrantyQualificationWorkflow:
         )
 
     def derive_state_from_facts(self, facts: Dict[str, Any]) -> str:
+        if facts.get("pending_reference_id") is not None:
+            return "CONFIRM_REFERENCE_ID"
         if facts.get("reference_id") is None:
             return "GET_REFERENCE_ID"
         if facts.get("name_confirmed") is None:
             return "GET_NAME_CONFIRMATION"
+        if (
+            facts.get("pending_vehicle_year") is not None
+            and facts.get("pending_vehicle_make") is not None
+            and facts.get("pending_vehicle_model") is not None
+        ):
+            return "CONFIRM_VEHICLE"
         if facts.get("vehicle_year") is None or facts.get("vehicle_make") is None or facts.get("vehicle_model") is None:
             return "GET_VEHICLE"
         if facts.get("mileage") is None:
@@ -103,10 +121,18 @@ class WarrantyQualificationWorkflow:
     def next_question_for_state(self, state: str, facts: Dict[str, Any], context: WorkflowContext) -> str:
         if state == "GET_REFERENCE_ID":
             return self.get_opening_message(context)
+        if state == "CONFIRM_REFERENCE_ID":
+            heard_reference = facts.get("pending_reference_id", "")
+            return f"I heard reference number {heard_reference}. Is that right?"
         if state == "GET_NAME_CONFIRMATION":
             return f"Thanks. I have this registration under {context.caller_name}. Can you confirm your name?"
         if state == "GET_VEHICLE":
             return "Thanks. What's the year, make, and model of the vehicle? You can answer naturally, like \"It's a 2021 Ford Escape.\""
+        if state == "CONFIRM_VEHICLE":
+            year = facts.get("pending_vehicle_year")
+            make = facts.get("pending_vehicle_make")
+            model = facts.get("pending_vehicle_model")
+            return f"I heard a {year} {make} {model}. Is that correct?"
         if state == "GET_MILEAGE":
             return "About how many miles are on it? An estimate is fine, and replies like \"42k\" or \"around forty-two thousand\" both work."
         if state == "GET_DECISION_MAKER":
@@ -151,6 +177,36 @@ class WarrantyQualificationWorkflow:
         if 0 <= mileage <= 500000:
             return mileage
         return None
+
+    def is_voice_context(self, context: WorkflowContext) -> bool:
+        return (context.input_mode or "").lower() in {"voice", "phone", "call", "twilio_voice", "twilio"}
+
+    def is_partial_voice_transcript(self, context: WorkflowContext) -> bool:
+        return self.is_voice_context(context) and bool(context.transcript_is_partial) and not bool(context.transcript_is_final)
+
+    def is_low_confidence_voice(self, context: WorkflowContext) -> bool:
+        if not self.is_voice_context(context):
+            return False
+        confidence = context.transcript_confidence
+        if confidence is None:
+            return False
+        return confidence < float(self.config["voice"]["min_confidence_to_commit"])
+
+    def needs_voice_confirmation(self, context: WorkflowContext) -> bool:
+        if not self.is_voice_context(context):
+            return False
+        confidence = context.transcript_confidence
+        if confidence is None:
+            return True
+        return confidence < float(self.config["voice"]["min_confidence_without_confirmation"])
+
+    def clear_pending_reference(self, facts: Dict[str, Any]) -> None:
+        facts.pop("pending_reference_id", None)
+
+    def clear_pending_vehicle(self, facts: Dict[str, Any]) -> None:
+        facts.pop("pending_vehicle_year", None)
+        facts.pop("pending_vehicle_make", None)
+        facts.pop("pending_vehicle_model", None)
 
     def apply_rules(self, facts: Dict[str, Any]) -> Dict[str, Any]:
         qcfg = self.config["qualification"]
@@ -247,6 +303,17 @@ class WarrantyQualificationWorkflow:
     ) -> TurnResult:
         updated_facts = dict(facts)
         extraction = extractor.extract(self, state, user_msg, updated_facts, context)
+
+        if self.is_partial_voice_transcript(context):
+            return self.continue_result(
+                updated_facts,
+                state,
+                "",
+                extraction,
+                turns_without_progress,
+                save_attempt_used,
+            )
+
         deviation = self.detect_deviation(user_msg, updated_facts)
 
         if any(
@@ -287,6 +354,25 @@ class WarrantyQualificationWorkflow:
         if state == "GET_REFERENCE_ID":
             reference_id = extraction.data.get("reference_id")
             if reference_id:
+                if self.is_low_confidence_voice(context):
+                    return self.continue_result(
+                        updated_facts,
+                        state,
+                        "I didn't catch the reference number clearly. Please say it one character at a time.",
+                        extraction,
+                        turns_without_progress + 1,
+                        save_attempt_used,
+                    )
+                if self.needs_voice_confirmation(context):
+                    updated_facts["pending_reference_id"] = reference_id
+                    return self.continue_result(
+                        updated_facts,
+                        "CONFIRM_REFERENCE_ID",
+                        self.next_question_for_state("CONFIRM_REFERENCE_ID", updated_facts, context),
+                        extraction,
+                        0,
+                        save_attempt_used,
+                    )
                 updated_facts["reference_id"] = reference_id
                 new_state = "GET_NAME_CONFIRMATION"
                 return self.continue_result(
@@ -317,6 +403,39 @@ class WarrantyQualificationWorkflow:
                 "Sorry - I didn't catch that. What's the letter reference number?",
                 extraction,
                 turns_without_progress,
+                save_attempt_used,
+            )
+
+        if state == "CONFIRM_REFERENCE_ID":
+            confirmed = extraction.data.get("name_confirmed")
+            if confirmed is True and updated_facts.get("pending_reference_id"):
+                updated_facts["reference_id"] = updated_facts["pending_reference_id"]
+                self.clear_pending_reference(updated_facts)
+                new_state = "GET_NAME_CONFIRMATION"
+                return self.continue_result(
+                    updated_facts,
+                    new_state,
+                    self.next_question_for_state(new_state, updated_facts, context),
+                    extraction,
+                    0,
+                    save_attempt_used,
+                )
+            if confirmed is False:
+                self.clear_pending_reference(updated_facts)
+                return self.continue_result(
+                    updated_facts,
+                    "GET_REFERENCE_ID",
+                    "Thanks. Please say the letter reference number again, one character at a time.",
+                    extraction,
+                    0,
+                    save_attempt_used,
+                )
+            return self.continue_result(
+                updated_facts,
+                state,
+                "Sorry - I just need to confirm whether I heard the reference number correctly.",
+                extraction,
+                turns_without_progress + 1,
                 save_attempt_used,
             )
 
@@ -371,6 +490,29 @@ class WarrantyQualificationWorkflow:
             make = extraction.data.get("vehicle_make")
             model = extraction.data.get("vehicle_model")
 
+            if self.is_low_confidence_voice(context) and (year is not None or make or model):
+                return self.continue_result(
+                    updated_facts,
+                    state,
+                    "I didn't catch the vehicle details clearly. Please say the year, make, and model again.",
+                    extraction,
+                    turns_without_progress + 1,
+                    save_attempt_used,
+                )
+
+            if self.needs_voice_confirmation(context) and year is not None and make and model:
+                updated_facts["pending_vehicle_year"] = year
+                updated_facts["pending_vehicle_make"] = make
+                updated_facts["pending_vehicle_model"] = model
+                return self.continue_result(
+                    updated_facts,
+                    "CONFIRM_VEHICLE",
+                    self.next_question_for_state("CONFIRM_VEHICLE", updated_facts, context),
+                    extraction,
+                    0,
+                    save_attempt_used,
+                )
+
             if year is not None:
                 updated_facts["vehicle_year"] = year
             if make:
@@ -423,6 +565,53 @@ class WarrantyQualificationWorkflow:
                 save_attempt_used,
             )
 
+        if state == "CONFIRM_VEHICLE":
+            confirmed = extraction.data.get("name_confirmed")
+            if confirmed is True:
+                updated_facts["vehicle_year"] = updated_facts.get("pending_vehicle_year")
+                updated_facts["vehicle_make"] = updated_facts.get("pending_vehicle_make")
+                updated_facts["vehicle_model"] = updated_facts.get("pending_vehicle_model")
+                self.clear_pending_vehicle(updated_facts)
+                decision = self.apply_rules(updated_facts)
+                if not decision["eligible"] and "year_below_minimum" in decision["reason_codes"]:
+                    return self.handoff_result(
+                        updated_facts,
+                        "HANDOFF",
+                        "Thanks - based on the vehicle year, it looks like this vehicle doesn't meet the eligibility criteria. I'm going to connect you to an agent to go over options.",
+                        extraction,
+                        0,
+                        save_attempt_used,
+                        ["not_eligible"] + decision["reason_codes"],
+                        qualification=decision,
+                    )
+                new_state = "GET_MILEAGE"
+                return self.continue_result(
+                    updated_facts,
+                    new_state,
+                    self.next_question_for_state(new_state, updated_facts, context),
+                    extraction,
+                    0,
+                    save_attempt_used,
+                )
+            if confirmed is False:
+                self.clear_pending_vehicle(updated_facts)
+                return self.continue_result(
+                    updated_facts,
+                    "GET_VEHICLE",
+                    "Thanks. Please say the vehicle year, make, and model again.",
+                    extraction,
+                    0,
+                    save_attempt_used,
+                )
+            return self.continue_result(
+                updated_facts,
+                state,
+                "Sorry - I just need to confirm whether I heard the vehicle details correctly.",
+                extraction,
+                turns_without_progress + 1,
+                save_attempt_used,
+            )
+
         if state == "GET_MILEAGE":
             mileage = self.validate_mileage(extraction.data.get("mileage"))
             if mileage is None:
@@ -444,6 +633,16 @@ class WarrantyQualificationWorkflow:
                     "Sorry - about how many miles are on it? You can reply like \"42000\" or \"42k\".",
                     extraction,
                     turns_without_progress,
+                    save_attempt_used,
+                )
+
+            if self.is_low_confidence_voice(context):
+                return self.continue_result(
+                    updated_facts,
+                    state,
+                    "I didn't catch the mileage clearly. Please say the mileage again.",
+                    extraction,
+                    turns_without_progress + 1,
                     save_attempt_used,
                 )
 
