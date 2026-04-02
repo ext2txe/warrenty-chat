@@ -111,6 +111,57 @@ Test through Apache:
 curl https://ideatect.com/chat-api/version
 ```
 
+## Windows XAMPP deployment
+
+For a local or LAN-only Windows setup with XAMPP:
+
+### 1. Create the Python environment
+
+From the repo root on Windows:
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
+
+### 2. Run the FastAPI backend locally
+
+Use the helper script:
+
+```powershell
+windows\run-backend.bat
+```
+
+This starts the API on `http://127.0.0.1:8000`.
+
+### 3. Serve the web client from XAMPP Apache
+
+Two simple options:
+
+- Copy `web\chat\` into `C:\xampp\htdocs\chat\`
+- Or use the sample Apache config in `xampp/warrenty-chat-alias.conf`
+
+If you use the sample config, enable Apache proxy modules and include the file from your XAMPP Apache config. The sample maps:
+
+- `/chat` -> the static chat frontend
+- `/chat-api/` -> the local FastAPI backend on `127.0.0.1:8000`
+
+### 4. Open the app
+
+If you copied into `htdocs`:
+
+```text
+http://localhost/chat/
+```
+
+If you used the alias config:
+
+```text
+http://localhost/chat
+```
+
+The frontend already uses same-origin `/chat-api`, so no frontend code changes are required for XAMPP.
+
 ## Notes
 
 - A separate VPS is not required unless you want stronger isolation or separate scaling.
