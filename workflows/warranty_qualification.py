@@ -104,19 +104,19 @@ class WarrantyQualificationWorkflow:
         if state == "GET_REFERENCE_ID":
             return self.get_opening_message(context)
         if state == "GET_NAME_CONFIRMATION":
-            return f"Thanks. I have this registration under {context.caller_name}. Can you confirm your name? (yes/no)"
+            return f"Thanks. I have this registration under {context.caller_name}. Can you confirm your name?"
         if state == "GET_VEHICLE":
-            return "Thanks. What's the year, make, and model of the vehicle?"
+            return "Thanks. What's the year, make, and model of the vehicle? You can answer naturally, like \"It's a 2021 Ford Escape.\""
         if state == "GET_MILEAGE":
-            return "About how many miles are on it? An estimate is fine."
+            return "About how many miles are on it? An estimate is fine, and replies like \"42k\" or \"around forty-two thousand\" both work."
         if state == "GET_DECISION_MAKER":
-            return "Just to confirm - are you the decision maker for the vehicle? (yes/no)"
+            return "Just to confirm - are you the decision maker for the vehicle?"
         if state == "GET_PERSONAL_USE":
-            return "Just to confirm - is it for personal use (not business/fleet)? (yes/no)"
+            return "Just to confirm - is it for personal use (not business or fleet)?"
         if state == "GET_MODIFIED":
-            return "Just to confirm - is it modified in any major way? (yes/no)"
+            return "Just to confirm - is it modified in any major way?"
         if state == "GET_ISSUES":
-            return "Just to confirm - are there any mechanical issues or warning lights right now? (yes/no)"
+            return "Just to confirm - are there any mechanical issues or warning lights right now?"
         return "Thanks - you're all set. I'm going to connect you to an agent now."
 
     def detect_deviation(self, user_msg: str, facts: Dict[str, Any]) -> Dict[str, bool]:
@@ -360,7 +360,7 @@ class WarrantyQualificationWorkflow:
             return self.continue_result(
                 updated_facts,
                 state,
-                f"Sorry - I just need a yes or no. Is your name {context.caller_name}? (yes/no)",
+                f"Sorry - I just need to confirm whether your name is {context.caller_name}.",
                 extraction,
                 turns_without_progress,
                 save_attempt_used,
@@ -489,7 +489,7 @@ class WarrantyQualificationWorkflow:
                 return self.continue_result(
                     updated_facts,
                     state,
-                    "Sorry - just yes or no: are you the decision maker for the vehicle? (yes/no)",
+                    "Sorry - I just need to confirm whether you're the decision maker for the vehicle.",
                     extraction,
                     turns_without_progress,
                     save_attempt_used,
@@ -523,7 +523,7 @@ class WarrantyQualificationWorkflow:
                 return self.continue_result(
                     updated_facts,
                     state,
-                    "Sorry - just yes or no: is it for personal use (not business/fleet)? (yes/no)",
+                    "Sorry - I just need to confirm whether it's for personal use and not business or fleet use.",
                     extraction,
                     turns_without_progress,
                     save_attempt_used,
@@ -557,7 +557,7 @@ class WarrantyQualificationWorkflow:
                 return self.continue_result(
                     updated_facts,
                     state,
-                    "Sorry - just yes or no: is it modified in any major way? (yes/no)",
+                    "Sorry - I just need to confirm whether it's modified in any major way.",
                     extraction,
                     turns_without_progress,
                     save_attempt_used,
@@ -591,7 +591,7 @@ class WarrantyQualificationWorkflow:
                 return self.continue_result(
                     updated_facts,
                     state,
-                    "Sorry - just yes or no: any mechanical issues or warning lights right now? (yes/no)",
+                    "Sorry - I just need to confirm whether there are any mechanical issues or warning lights right now.",
                     extraction,
                     turns_without_progress,
                     save_attempt_used,
